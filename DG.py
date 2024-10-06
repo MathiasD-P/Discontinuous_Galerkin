@@ -24,9 +24,10 @@ class finite_elements:
         ri[1:order] = sp.special.roots_jacobi(order-1,1,1)[0]
         self.ri = ri
         self.h = mesh[1:self.N_el+1] - mesh[0:self.N_el]
+        self.xl = mesh[0:self.N_el]
         
         Ri = (np.tile(ri, (self.N_el, 1))).T
-        Xl = np.tile(mesh[0:self.N_el], (order+1, 1))
+        Xl = np.tile(self.xl, (order+1, 1))
         H = np.tile(self.h, (order+1, 1))
         elements = Xl + (1 + Ri) / 2 * H
         self.elements = elements
@@ -66,7 +67,7 @@ class galerkin:
         u_l = np.zeros((self.finite_elements.N_el+1,))
         u_r = np.zeros((self.finite_elements.N_el+1,))
         u_l[self.finite_elements.N_el] = bcs[1]
-        u_r[1] = bcs[0]
+        u_r[0] = bcs[0]
         u_l[0:self.finite_elements.N_el] = u[0,:]
         u_r[1:self.finite_elements.N_el+1] = u[self.finite_elements.order,:]
         
@@ -102,8 +103,24 @@ def RK4(F, X, t): # for a matrix differential equation
     
     return sol
 
-def L2(u, u_exact, x):
-    return np.sqrt(np.trapz((np.ravel(u - u_exact, order='F') ** 2), x=np.ravel(x, order='F')))
+def L2(u, u_exact, problem, order):
+    nodes, weights = np.polynomial.legendre.leggauss(order)
+    
+    Xl = np.tile(problem.finite_elements.xl, (order,1))
+    H = np.tile(problem.finite_elements.h, (order, 1))
+    Ri = np.tile(nodes, (problem.finite_elements.N_el, 1)).T
+    points = Xl + (1 + Ri) / 2 * H
+    
+    u_samp = np.zeros(np.shape(points))
+    for i in range(0, problem.finite_elements.N_el):
+        u_pol = sp.interpolate.lagrange(problem.finite_elements.ri, u[:,i])
+        u_samp[:,i] = u_pol(nodes)
+        
+    weights = np.tile(weights, (problem.finite_elements.N_el, 1)).T
+    L2_error = 0.5 * weights * H * (u_samp - u_exact(points)) ** 2
+    L2_error = np.sqrt(np.sum(L2_error))
+    
+    return L2_error
 
 def plot_u(x, t, u):
     color_map = plt.get_cmap('jet', len(t)-1)
